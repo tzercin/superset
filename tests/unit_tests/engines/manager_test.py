@@ -525,3 +525,162 @@ class TestEngineManager:
         with pytest.raises(OAuth2TestError, match="OAuth2 required"):
             with engine_manager.get_engine(mock_database, "catalog1", "schema1", None):
                 pass
+
+    @patch("superset.engines.manager.create_engine")
+    @patch("superset.engines.manager.make_url_safe")
+    def test_connect_args_from_engine_params_preserved(
+        self, mock_make_url, mock_create_engine, engine_manager
+    ):
+        """Test that connect_args nested in engine_params are properly passed through."""
+        from sqlalchemy.engine.url import make_url
+
+        engine_manager.mode = EngineModes.NEW
+
+        mock_uri = make_url("databricks://token:secret@host/db")
+        mock_make_url.return_value = mock_uri
+        mock_create_engine.return_value = MagicMock()
+
+        # Setup database with connect_args inside engine_params (the correct pattern)
+        database = MagicMock()
+        database.id = 1
+        database.sqlalchemy_uri_decrypted = "databricks://token:secret@host/db"
+        database.get_extra.return_value = {
+            "engine_params": {
+                "connect_args": {
+                    "http_path": "/sql/1.0/warehouses/abc123",
+                    "ssl": {"ca": "/path/to/ca.pem"},
+                }
+            }
+        }
+        database.get_effective_user.return_value = "alice"
+        database.impersonate_user = False
+        database.update_params_from_encrypted_extra = MagicMock()
+        database.db_engine_spec = MagicMock()
+        # adjust_engine_params should receive the connect_args and can modify them
+        database.db_engine_spec.adjust_engine_params.side_effect = (
+            lambda uri, connect_args, catalog, schema: (
+                uri,
+                {**connect_args, "adjusted": True},
+            )
+        )
+        database.db_engine_spec.validate_database_uri = MagicMock()
+        database.ssh_tunnel = None
+
+        uri, kwargs = engine_manager._get_engine_args(database, None, None, None, None)
+
+        # Verify adjust_engine_params received the connect_args from engine_params
+        call_args = database.db_engine_spec.adjust_engine_params.call_args
+        connect_args_passed = call_args[0][1]
+        assert connect_args_passed["http_path"] == "/sql/1.0/warehouses/abc123"
+        assert connect_args_passed["ssl"] == {"ca": "/path/to/ca.pem"}
+
+        # Verify the returned kwargs has the updated connect_args
+        assert "connect_args" in kwargs
+        assert kwargs["connect_args"]["adjusted"] is True
+
+    @patch("superset.engines.manager.create_engine")
+    @patch("superset.engines.manager.make_url_safe")
+    def test_poolclass_from_engine_params(
+        self, mock_make_url, mock_create_engine, engine_manager
+    ):
+        """Test that poolclass string in engine_params is resolved to actual pool class."""
+        from sqlalchemy.engine.url import make_url
+        from sqlalchemy.pool import QueuePool
+
+        engine_manager.mode = EngineModes.SINGLETON
+
+        mock_uri = make_url("postgresql://user:pass@localhost/db")
+        mock_make_url.return_value = mock_uri
+        mock_create_engine.return_value = MagicMock()
+
+        database = MagicMock()
+        database.id = 1
+        database.sqlalchemy_uri_decrypted = "postgresql://user:pass@localhost/db"
+        database.get_extra.return_value = {
+            "engine_params": {
+                "poolclass": "queue",  # String name, should be resolved to QueuePool
+                "pool_size": 10,
+            }
+        }
+        database.get_effective_user.return_value = "alice"
+        database.impersonate_user = False
+        database.update_params_from_encrypted_extra = MagicMock()
+        database.db_engine_spec = MagicMock()
+        database.db_engine_spec.adjust_engine_params.return_value = (mock_uri, {})
+        database.db_engine_spec.validate_database_uri = MagicMock()
+        database.ssh_tunnel = None
+
+        uri, kwargs = engine_manager._get_engine_args(database, None, None, None, None)
+
+        # poolclass should be resolved from string "queue" to QueuePool class
+        assert kwargs["poolclass"] is QueuePool
+        # pool_size should be preserved
+        assert kwargs["pool_size"] == 10
+
+    @patch("superset.engines.manager.create_engine")
+    @patch("superset.engines.manager.make_url_safe")
+    def test_poolclass_unknown_defaults_to_queue(
+        self, mock_make_url, mock_create_engine, engine_manager
+    ):
+        """Test that unknown poolclass string defaults to QueuePool."""
+        from sqlalchemy.engine.url import make_url
+        from sqlalchemy.pool import QueuePool
+
+        engine_manager.mode = EngineModes.SINGLETON
+
+        mock_uri = make_url("postgresql://user:pass@localhost/db")
+        mock_make_url.return_value = mock_uri
+
+        database = MagicMock()
+        database.id = 1
+        database.sqlalchemy_uri_decrypted = "postgresql://user:pass@localhost/db"
+        database.get_extra.return_value = {
+            "engine_params": {
+                "poolclass": "unknown_pool_type",  # Invalid, should default to QueuePool
+            }
+        }
+        database.get_effective_user.return_value = "alice"
+        database.impersonate_user = False
+        database.update_params_from_encrypted_extra = MagicMock()
+        database.db_engine_spec = MagicMock()
+        database.db_engine_spec.adjust_engine_params.return_value = (mock_uri, {})
+        database.db_engine_spec.validate_database_uri = MagicMock()
+        database.ssh_tunnel = None
+
+        uri, kwargs = engine_manager._get_engine_args(database, None, None, None, None)
+
+        assert kwargs["poolclass"] is QueuePool
+
+    @patch("superset.engines.manager.create_engine")
+    @patch("superset.engines.manager.make_url_safe")
+    def test_new_mode_always_uses_nullpool(
+        self, mock_make_url, mock_create_engine, engine_manager
+    ):
+        """Test that NEW mode ignores poolclass config and uses NullPool."""
+        from sqlalchemy.engine.url import make_url
+
+        engine_manager.mode = EngineModes.NEW
+
+        mock_uri = make_url("postgresql://user:pass@localhost/db")
+        mock_make_url.return_value = mock_uri
+
+        database = MagicMock()
+        database.id = 1
+        database.sqlalchemy_uri_decrypted = "postgresql://user:pass@localhost/db"
+        database.get_extra.return_value = {
+            "engine_params": {
+                "poolclass": "queue",  # Should be ignored in NEW mode
+            }
+        }
+        database.get_effective_user.return_value = "alice"
+        database.impersonate_user = False
+        database.update_params_from_encrypted_extra = MagicMock()
+        database.db_engine_spec = MagicMock()
+        database.db_engine_spec.adjust_engine_params.return_value = (mock_uri, {})
+        database.db_engine_spec.validate_database_uri = MagicMock()
+        database.ssh_tunnel = None
+
+        uri, kwargs = engine_manager._get_engine_args(database, None, None, None, None)
+
+        # NEW mode always uses NullPool regardless of config
+        assert kwargs["poolclass"] is NullPool

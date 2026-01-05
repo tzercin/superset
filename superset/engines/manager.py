@@ -333,10 +333,10 @@ class EngineManager:
                 "null": pool.NullPool,
                 "static": pool.StaticPool,
             }
-            kwargs["poolclass"] = pools.get(extra["poolclass"], pool.QueuePool)
+            kwargs["poolclass"] = pools.get(kwargs["poolclass"], pool.QueuePool)
 
         # update URI for specific catalog/schema
-        connect_args = extra.setdefault("connect_args", {})
+        connect_args = kwargs.setdefault("connect_args", {})
         uri, connect_args = database.db_engine_spec.adjust_engine_params(
             uri,
             connect_args,

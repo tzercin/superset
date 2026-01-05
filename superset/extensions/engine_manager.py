@@ -71,9 +71,10 @@ class EngineManagerExtension:
             if self.engine_manager:
                 self.engine_manager.stop_cleanup_thread()
 
-        app.teardown_appcontext_funcs.append(lambda exc: None)
+        # Register with Flask teardown for app context cleanup (tests, reloader)
+        app.teardown_appcontext_funcs.append(lambda exc: shutdown_engine_manager())
 
-        # Register with atexit for clean shutdown
+        # Register with atexit for clean process shutdown
         import atexit
 
         atexit.register(shutdown_engine_manager)

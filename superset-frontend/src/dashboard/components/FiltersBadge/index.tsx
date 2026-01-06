@@ -201,30 +201,29 @@ export const FiltersBadge = ({ chartId }: FiltersBadgeProps) => {
   const prevChartConfig = usePrevious(chartConfiguration);
 
   useEffect(() => {
-    if (!showIndicators && nativeIndicators.length > 0) {
+    const shouldRecalculate =
+      prevChartStatus !== 'success' ||
+      dataMask !== prevDataMask ||
+      chart?.queriesResponse?.[0]?.rejected_filters !==
+        prevChart?.queriesResponse?.[0]?.rejected_filters ||
+      chart?.queriesResponse?.[0]?.applied_filters !==
+        prevChart?.queriesResponse?.[0]?.applied_filters ||
+      nativeFilters !== prevNativeFilters ||
+      chartLayoutItems !== prevChartLayoutItems ||
+      prevChartConfig !== chartConfiguration;
+
+    if (shouldRecalculate) {
+      const newIndicators = selectNativeIndicatorsForChart(
+        nativeFilters,
+        dataMask,
+        chartId,
+        chart,
+        chartLayoutItems,
+        chartConfiguration,
+      );
+      setNativeIndicators(newIndicators);
+    } else if (!showIndicators && nativeIndicators.length > 0) {
       setNativeIndicators(indicatorsInitialState);
-    } else if (prevChartStatus !== 'success') {
-      if (
-        chart?.queriesResponse?.[0]?.rejected_filters !==
-          prevChart?.queriesResponse?.[0]?.rejected_filters ||
-        chart?.queriesResponse?.[0]?.applied_filters !==
-          prevChart?.queriesResponse?.[0]?.applied_filters ||
-        nativeFilters !== prevNativeFilters ||
-        chartLayoutItems !== prevChartLayoutItems ||
-        dataMask !== prevDataMask ||
-        prevChartConfig !== chartConfiguration
-      ) {
-        setNativeIndicators(
-          selectNativeIndicatorsForChart(
-            nativeFilters,
-            dataMask,
-            chartId,
-            chart,
-            chartLayoutItems,
-            chartConfiguration,
-          ),
-        );
-      }
     }
   }, [
     chart,

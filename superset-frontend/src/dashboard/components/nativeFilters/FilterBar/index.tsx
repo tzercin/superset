@@ -204,24 +204,35 @@ const FilterBar: FC<FiltersBarProps> = ({
       dataMask: Partial<DataMask>,
     ) => {
       setDataMaskSelected(draft => {
-        const isFirstTimeInitialization =
-          !initializedFilters.has(filter.id) &&
-          dataMaskSelectedRef.current[filter.id]?.filterState?.value ===
-            undefined;
+        const appliedDataMask = dataMaskApplied[filter.id];
+        const isFirstTimeInitialization = !initializedFilters.has(filter.id);
 
-        // force instant updating on initialization for filters with `requiredFirst` is true or instant filters
-        if (
-          // filterState.value === undefined - means that value not initialized
+        // Auto-apply when filter has value but empty extraFormData in applied state
+        // This fixes the bug where defaultDataMask.filterState.value exists but extraFormData is empty
+        const needsAutoApply =
+          appliedDataMask?.filterState?.value !== undefined &&
+          (!appliedDataMask?.extraFormData ||
+            Object.keys(appliedDataMask.extraFormData || {}).length === 0) &&
           dataMask.filterState?.value !== undefined &&
-          isFirstTimeInitialization &&
-          filter.requiredFirst
+          dataMask.extraFormData &&
+          Object.keys(dataMask.extraFormData).length > 0;
+
+        // Force instant updating for requiredFirst filters or auto-apply when needed
+        if (
+          dataMask.filterState?.value !== undefined &&
+          ((isFirstTimeInitialization && filter.requiredFirst) ||
+            needsAutoApply)
         ) {
           dispatch(updateDataMask(filter.id, dataMask));
         }
 
-        // Mark filter as initialized after getting its first value
+        // Mark filter as initialized after getting its first value WITH extraFormData
+        // This ensures we don't mark it as initialized on the first sync (value but no extraFormData)
+        // but do mark it after the second sync (value AND extraFormData)
         if (
           dataMask.filterState?.value !== undefined &&
+          dataMask.extraFormData &&
+          Object.keys(dataMask.extraFormData).length > 0 &&
           !initializedFilters.has(filter.id)
         ) {
           setInitializedFilters(prev => new Set(prev).add(filter.id));
@@ -252,7 +263,13 @@ const FilterBar: FC<FiltersBarProps> = ({
         };
       });
     },
-    [dispatch, setDataMaskSelected, initializedFilters, setInitializedFilters],
+    [
+      dispatch,
+      setDataMaskSelected,
+      initializedFilters,
+      setInitializedFilters,
+      dataMaskApplied,
+    ],
   );
 
   useEffect(() => {

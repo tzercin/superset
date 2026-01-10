@@ -529,6 +529,7 @@ const Header = () => {
   const userCanCurate =
     isFeatureEnabled(FeatureFlag.EmbeddedSuperset) &&
     findPermission('can_set_embedded', 'Dashboard', user.roles);
+  const userCanExport = dashboardInfo.dash_export_perm;
   const isEmbedded = !dashboardInfo?.userId;
 
   const handleOnPropertiesChange = useCallback(
@@ -779,6 +780,7 @@ const Header = () => {
     userCanShare,
     userCanSave: userCanSaveAs,
     userCanCurate,
+    userCanExport,
     isLoading,
     showReportModal,
     showPropertiesModal,

@@ -23,6 +23,7 @@ it needs to call create_app() in order to initialize things properly
 from typing import Any
 
 from celery.signals import task_postrun, worker_process_init
+from flask import has_app_context
 
 # Superset framework imports
 from superset import create_app
@@ -68,4 +69,7 @@ def teardown(  # pylint: disable=unused-argument
             db.session.commit()  # pylint: disable=consider-using-transaction
 
     if not flask_app.config.get("CELERY_ALWAYS_EAGER"):
-        db.session.remove()
+        # Only attempt to remove the session if we're within an app context
+        # to avoid "Working outside of application context" errors
+        if has_app_context():
+            db.session.remove()
